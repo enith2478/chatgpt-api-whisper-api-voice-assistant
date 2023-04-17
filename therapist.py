@@ -1,5 +1,8 @@
 import gradio as gr
+import pyttsx3
 import openai, config, subprocess
+from pydub import AudioSegment
+
 openai.api_key = config.OPENAI_API_KEY
 
 messages = [{"role": "system", "content": 'You are a therapist. Respond to all input in 25 words or less.'}]
@@ -7,27 +10,39 @@ messages = [{"role": "system", "content": 'You are a therapist. Respond to all i
 def transcribe(audio):
     global messages
 
-    audio_filename_with_extension = audio + '.wav'
-    os.rename(audio, audio_filename_with_extension)
+    audio_segment = AudioSegment.from_file(audio).export("converted_audio.wav", format="wav")
+    print(audio_segment)
     
-    audio_file = open(audio_filename_with_extension, "rb")
-    transcript = openai.Audio.transcribe("whisper-1", audio_file)
+    with open("converted_audio.wav", "rb") as audio:
+        transcript = openai.Audio.transcribe('whisper-1', audio)
 
     messages.append({"role": "user", "content": transcript["text"]})
 
     response = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=messages)
 
-    system_message = response["choices"][0]["message"]
-    messages.append(system_message)
+    system_message = response["choices"][0]["message"]["content"]
+    messages.append({"role": "assistant", "content": system_message})
+    
+     #python speech module
+    engine = pyttsx3.init()
+        # set female voice
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[1].id)
+    rate = engine.getProperty('rate')
+    engine.setProperty('rate', rate+10)
 
-    subprocess.call(["say", system_message['content']])
+    engine.say(system_message)
+    engine.runAndWait()
 
     chat_transcript = ""
     for message in messages:
-        if message['role'] != 'system':
-            chat_transcript += message['role'] + ": " + message['content'] + "\n\n"
+        if message["role"] != 'system':
+            chat_transcript += message["role"] + ": " + message["content"] + "\n\n"
 
     return chat_transcript
 
-ui = gr.Interface(fn=transcribe, inputs=gr.Audio(source="microphone", type="filepath"), outputs="text").launch()
-ui.launch()
+
+
+ui = gr.Interface(fn=transcribe, inputs=gr.Audio(source="microphone",type="filepath"), outputs="text")
+
+ui.launch(share=True)
